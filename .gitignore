@@ -1,0 +1,19 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# User data
+todos.json
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*~
