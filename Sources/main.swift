@@ -1,4 +1,5 @@
 import AppKit
+import AudioToolbox
 
 // ==================== 数据模型 ====================
 struct TodoItem: Codable {
@@ -587,6 +588,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         let taskDate = cal.date(from: c) ?? now
         let item = TodoItem(title: title, date: taskDate, endDate: nil, location: nil, notes: "")
         store.add(item)
+        SoundFX.shared.rollTask()
         tableView.reloadData(); updateStatus()
     }
 
@@ -860,6 +862,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
 
     // MARK: - 动作
     @objc func starToggled(_ sender: NSButton) {
+        SoundFX.shared.starToggle()
         let row = sender.tag
         if row < displayRows.count { store.toggleStar(itemFor(row).id); tableView.reloadData() }
     }
@@ -872,7 +875,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
 
     @objc func checkToggled(_ sender: NSButton) {
         let row = sender.tag
-        if row < displayRows.count { store.toggle(itemFor(row).id); tableView.reloadData(); refreshVisibleNotes() }
+        if row < displayRows.count { store.toggle(itemFor(row).id); tableView.reloadData(); refreshVisibleNotes(); SoundFX.shared.taskComplete() }
     }
 
     @objc func checkToggledFromMenu() {
@@ -882,13 +885,15 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     @objc func toggleCountdownMode() {
+SoundFX.shared.buttonTap()
         store.showDetailedCountdown.toggle(); tableView.reloadData()
     }
 
     @objc func deleteClickedRow() {
+        SoundFX.shared.taskDelete()
         let row = tableView.clickedRow
         if row >= 0 && row < displayRows.count {
-            store.delete([itemFor(row).id])
+            store.delete([itemFor(row).id]); refreshVisibleNotes()
         } else {
             store.delete(selectedIDs)
         }
@@ -896,6 +901,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     @objc func parseAction() {
+SoundFX.shared.buttonTap()
         let text = inputField.stringValue.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         store.add(parseSmartInput(text))
@@ -904,6 +910,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     @objc func addAction() {
+        SoundFX.shared.noteCreate()
         let alert = NSAlert(); alert.messageText = "添加待办事项"
         alert.addButton(withTitle: "添加"); alert.addButton(withTitle: "取消")
 
@@ -982,26 +989,30 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     @objc func selectAllAction() {
+SoundFX.shared.buttonTap()
         if selectedIDs.count >= store.items.count { tableView.deselectAll(nil) }
         else { tableView.selectAll(nil) }
     }
 
     @objc func clearDone() {
+        SoundFX.shared.taskDelete()
         let done = Set(store.items.filter { $0.isCompleted }.map { $0.id })
-        store.delete(done); tableView.reloadData(); updateStatus()
+        store.delete(done); tableView.reloadData(); updateStatus(); refreshVisibleNotes()
     }
 
     @objc func trashClicked() {
         guard !selectedIDs.isEmpty else {
-            let a = NSAlert(); a.messageText = "请先选中要删除的表项"; a.runModal(); return
+            SoundFX.shared.alertShow(); let a = NSAlert(); a.messageText = "请先选中要删除的表项"; a.runModal(); return
         }
-        let a = NSAlert(); a.messageText = "确认删除"
+        SoundFX.shared.alertShow(); let a = NSAlert(); a.messageText = "确认删除"
         a.informativeText = "将删除选中的 \(selectedIDs.count) 个表项，此操作不可撤销。"
         a.addButton(withTitle: "删除"); a.addButton(withTitle: "取消")
         if a.runModal() == .alertFirstButtonReturn {
             store.delete(selectedIDs)
             selectedIDs.removeAll()
             tableView.reloadData(); updateStatus()
+            refreshVisibleNotes()
+            SoundFX.shared.taskDelete()
         }
     }
 
@@ -1048,6 +1059,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     @objc func refreshAction() {
+        SoundFX.shared.refreshDone()
         store.reload()
         tableView.reloadData()
         updateStatus()
@@ -1110,7 +1122,10 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
             items = store.todayItems
         }
         guard !items.isEmpty else {
-            let a = NSAlert(); a.messageText = "今日没有待办任务"; a.runModal(); return
+            // 今日无任务时关闭便笺，不弹窗
+            StickyNoteManager.shared.todayPanel?.close()
+            StickyNoteManager.shared.todayPanel = nil
+            return
         }
         var blocks: [(String, String, String, String, String, NSColor, Int, Bool, UUID?)] = []
         for item in items {
@@ -1134,12 +1149,13 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     // MARK: - 长期便笺（选中项）
     func generateMemoNote() {
         guard !selectedIDs.isEmpty else {
-            let a = NSAlert(); a.messageText = "请先选中要加入便笺的待办任务"; a.runModal(); return
+            SoundFX.shared.alertShow(); let a = NSAlert(); a.messageText = "请先选中要加入便笺的待办任务"; a.runModal(); return
         }
         let items = store.longTermItems.filter { selectedIDs.contains($0.id) }
         guard !items.isEmpty else {
-            let a = NSAlert(); a.messageText = "所选任务均为今日待办，请用今日便笺"; a.runModal(); return
+            SoundFX.shared.alertShow(); let a = NSAlert(); a.messageText = "所选任务均为今日待办，请用今日便笺"; a.runModal(); return
         }
+        // 强制刷新便笺数据
         var blocks: [(String, String, String, String, String, NSColor, Int, Bool, UUID?)] = []
         for item in items {
             var timeStr = ""
@@ -1185,6 +1201,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     @objc func exportAction() {
+        SoundFX.shared.exportDone()
         guard !selectedIDs.isEmpty else { return }
         let md = store.exportMarkdown(ids: selectedIDs)
         let panel = NSSavePanel()
@@ -1298,6 +1315,7 @@ class ColorPickerHelper: NSObject {
     weak var previewBox: NSButton?
 
     @objc func swatchClicked(_ sender: NSButton) {
+SoundFX.shared.buttonTap()
         let colors = sm.currentPalette
         guard sender.tag < colors.count else { return }
         sm.customNoteColor = colors[sender.tag]
@@ -1306,6 +1324,60 @@ class ColorPickerHelper: NSObject {
         sm.applySettings()
         paletteView.isHidden = true
     }
+}
+
+class SoundFX {
+    static let shared = SoundFX()
+    // 预加载音效池，每个音效 4 个实例轮换，支持快速连续播放
+    private var pools: [String: [NSSound]] = [:]
+    private var indices: [String: Int] = [:]
+    private let poolSize = 4
+
+    init() {
+        for name in ["Glass", "Blow", "Pop", "Tink", "Funk", "Purr", "Ping", "Hero", "Bottle", "Frog", "Sosumi", "Submarine"] {
+            var instances: [NSSound] = []
+            for _ in 0..<poolSize {
+                if let s = NSSound(named: NSSound.Name(name)) {
+                    s.volume = 0.7
+                    instances.append(s)
+                }
+            }
+            pools[name] = instances
+            indices[name] = 0
+        }
+    }
+
+    // 展开音效防抖：冷却时间 = 折叠延时设置
+    private var lastExpandTime: TimeInterval = 0
+    func noteExpand() {
+        let now = Date().timeIntervalSince1970
+        let cooldown = StickyNoteManager.shared.collapseDelay
+        guard now - lastExpandTime >= cooldown else { return }
+        lastExpandTime = now
+        play("Purr")
+    }
+
+    func play(_ name: String) {
+        guard let pool = pools[name], !pool.isEmpty else { return }
+        let idx = indices[name] ?? 0
+        let sound = pool[idx % pool.count]
+        sound.currentTime = 0
+        sound.play()
+        indices[name] = (idx + 1) % poolSize
+    }
+
+    func taskComplete() { play("Glass") }
+    func taskDelete() { play("Blow") }
+    func noteCreate() { play("Pop") }
+    func noteToggle() { play("Ping") }
+    func rollTask() { play("Funk") }
+    func buttonTap() { play("Bottle") }
+    func noteCollapse() { play("Purr") }
+    func exportDone() { play("Hero") }
+    func refreshDone() { play("Ping") }
+    func alertShow() { play("Sosumi") }
+    func starToggle() { play("Frog") }
+    func headerToggle() { play("Submarine") }
 }
 
 class SliderTracker: NSObject {
@@ -1389,8 +1461,8 @@ class SectionHeaderView: NSView {
 
     var onRollClick: (() -> Void)?
     @objc func rollClicked() { onRollClick?() }
-    @objc func headerClicked() { onToggle?() }
-    @objc func noteClicked() { onNoteClick?() }
+    @objc func headerClicked() { SoundFX.shared.headerToggle(); onToggle?() }
+    @objc func noteClicked() { SoundFX.shared.noteCreate(); onNoteClick?() }
 
     override func layout() {
         super.layout()
@@ -1691,6 +1763,8 @@ class StickyNoteManager {
         if let p = todayPanel,
            let v = p.contentView?.subviews.first(where: { $0 is StickyNoteView }) as? StickyNoteView {
             v.taskBlocks = tasks.sorted { $0.6 < $1.6 }
+            v.isCollapsedState = false // 强制展开
+            p.alphaValue = noteAlpha
             v.rebuildCheckboxes()
             v.needsDisplay = true
             // 自动调整高度
@@ -1714,6 +1788,8 @@ class StickyNoteManager {
         if let p = memoPanel,
            let v = p.contentView?.subviews.first(where: { $0 is StickyNoteView }) as? StickyNoteView {
             v.taskBlocks = tasks.sorted { $0.6 < $1.6 }
+            v.isCollapsedState = false // 强制展开
+            p.alphaValue = noteAlpha
             v.rebuildCheckboxes()
             v.needsDisplay = true
             var h: CGFloat = 32
@@ -1832,6 +1908,7 @@ class StickyNoteManager {
 
         if isToday { todayPanel = p } else { memoPanel = p }
         p.orderFrontRegardless()
+        SoundFX.shared.noteCreate()
         stackNotes()
         // 立即开始计时折叠（不需要等鼠标经过）
         if let nv = p.contentView?.subviews.first(where: { $0 is StickyNoteView }) as? StickyNoteView {
@@ -1948,6 +2025,7 @@ class StickyNoteManager {
     var panelCollapseTimers: [ObjectIdentifier: Timer] = [:]
 
     func expandNotePanel(_ view: StickyNoteView) {
+        SoundFX.shared.noteExpand()
         panelCollapseTimers[ObjectIdentifier(view)]?.invalidate()
         panelCollapseTimers[ObjectIdentifier(view)] = nil
         // 找到包含此view的panel

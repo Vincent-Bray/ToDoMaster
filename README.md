@@ -2,7 +2,7 @@
 
 > macOS 原生待办事项管理与桌面便笺工具 · 为高效备考与日常任务管理而生
 
-![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.0-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.1-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -169,6 +169,19 @@ ToDoMaster/
 ---
 
 ## 更新日志
+
+### v2.0.1（2026-10-22）🔧
+
+**音效系统**
+- 🔊 全按钮音效反馈（Glass/Blow/Pop/Funk/Frog/Bottle/Hero/Ping 等）
+- 🔊 弹窗提示音（Sosumi）
+- 🔊 便笺展开音效（Purr），防抖冷却 = 折叠延时设置
+- 🔊 NSSound 预加载池，快速连续点击零延迟
+
+**Bug 修复**
+- 🐛 修复删除任务后便笺不刷新、悬停反复弹窗
+- 🐛 修复折叠状态创建便笺展开后内容空白
+- 🐛 修复快速点击音效无法连续播放
 
 ### v2.0.0（2026-10-22）🎉
 
