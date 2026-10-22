@@ -51,6 +51,10 @@ class TodoStore {
 
     func sortItems() {
         items.sort { a, b in
+            // 过期项排最后
+            let aExpired = a.date.map { $0.timeIntervalSinceNow < 0 } ?? false
+            let bExpired = b.date.map { $0.timeIntervalSinceNow < 0 } ?? false
+            if aExpired != bExpired { return !aExpired }
             if a.isStarred != b.isStarred { return a.isStarred }
             let ad = a.date ?? .distantFuture
             let bd = b.date ?? .distantFuture
@@ -77,14 +81,25 @@ class TodoStore {
             if h > 0 { return "\(h)时\(m)分" }
             return "\(m)分钟"
         }
-        if days == 0 { return "今天" }
+        // 当天任务自动显示小时/分钟倒数
+        if days == 0 {
+            let interval = date.timeIntervalSince(Date())
+            if interval < 0 { return "已过期" }
+            let h = Int(interval) / 3600
+            let m = (Int(interval) % 3600) / 60
+            if h > 0 { return "\(h)时\(m)分" }
+            return "\(m)分钟"
+        }
         return "\(days)天"
     }
 
     func urgencyColor(for item: TodoItem) -> NSColor? {
         guard let date = item.date else { return nil }
         let days = daysUntil(date)
-        if days < 0 { return nil }
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let expiredBg = isDark ? NSColor(white: 0.22, alpha: 1.0) : NSColor(white: 0.88, alpha: 1.0)
+        if days < 0 { return expiredBg }
+        if date.timeIntervalSinceNow < 0 { return expiredBg }
         if item.isStarred { return NSColor.systemPurple.withAlphaComponent(0.15) }
         switch days {
         case 0: return NSColor.systemPurple.withAlphaComponent(0.12)
@@ -118,6 +133,7 @@ class TodoStore {
     private func save() {
         if let d = try? JSONEncoder().encode(items) { try? d.write(to: fileURL) }
     }
+    func reload() { load() }
     private func load() {
         if let d = try? Data(contentsOf: fileURL),
            let dec = try? JSONDecoder().decode([TodoItem].self, from: d) {
@@ -167,7 +183,7 @@ func parseSmartInput(_ input: String) -> TodoItem {
         }
         let mo = Int(gD(1)) ?? 1; let da = Int(gD(2)) ?? 1
         var c = cal.dateComponents([.year], from: now); c.month = mo; c.day = da
-        if let d = cal.date(from: c), d < now { c.year! += 1; date = cal.date(from: c) }
+        if let d = cal.date(from: c), cal.startOfDay(for: d) < cal.startOfDay(for: now) { c.year! += 1; date = cal.date(from: c) }
         else { date = cal.date(from: c) }
         removeMatch(m)
     }
@@ -377,6 +393,8 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         clrBtn.bezelStyle = NSButton.BezelStyle.smallSquare; clrBtn.font = NSFont.systemFont(ofSize: 11)
         let expBtn = NSButton(title: "导出 Markdown", target: self, action: #selector(exportAction))
         expBtn.bezelStyle = NSButton.BezelStyle.rounded; expBtn.font = NSFont.systemFont(ofSize: 11)
+        let refreshBtn = NSButton(title: "⟳ 刷新", target: self, action: #selector(refreshAction))
+        refreshBtn.bezelStyle = NSButton.BezelStyle.rounded; refreshBtn.font = NSFont.systemFont(ofSize: 11)
         let settingsBtn = NSButton(title: "⚙ 设置", target: self, action: #selector(openSettings))
         settingsBtn.bezelStyle = NSButton.BezelStyle.rounded; settingsBtn.font = NSFont.systemFont(ofSize: 11)
         let addBtn = NSButton(title: "+ 添加", target: self, action: #selector(addAction))
@@ -385,7 +403,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
 
         let noteBtn = NSButton(title: "便笺", target: self, action: #selector(createStickyNote))
         noteBtn.bezelStyle = NSButton.BezelStyle.rounded; noteBtn.font = NSFont.systemFont(ofSize: 11)
-        let toolbar = NSStackView(views: [statusLabel, NSView(), selBtn, clrBtn, expBtn, noteBtn, settingsBtn, addBtn])
+        let toolbar = NSStackView(views: [statusLabel, NSView(), selBtn, clrBtn, expBtn, noteBtn, refreshBtn, settingsBtn, addBtn])
         toolbar.orientation = NSUserInterfaceLayoutOrientation.horizontal
         toolbar.spacing = 8
         toolbar.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
@@ -451,12 +469,14 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         let item = store.items[row]
         let cid = col?.identifier.rawValue ?? ""
         let bg = store.urgencyColor(for: item)
-        let isPast = item.date.map { store.daysUntil($0) < 0 } ?? false
+        let isPast = item.date.map { $0.timeIntervalSinceNow < 0 } ?? false
 
-        func strikethrough(_ s: String) -> NSAttributedString {
-            NSAttributedString(string: s, attributes: [
+        func strikethrough(_ s: String, fontSize: CGFloat = 11) -> NSAttributedString {
+            return NSAttributedString(string: s, attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize),
+                .foregroundColor: NSColor(white: 0.55, alpha: 1.0),
                 .strikethroughStyle: NSUnderlineStyle.single.rawValue,
-                .foregroundColor: NSColor.secondaryLabelColor
+                .strikethroughColor: NSColor(white: 0.55, alpha: 1.0)
             ])
         }
 
@@ -479,7 +499,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
             cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
             if item.isCompleted || isPast {
-                cell.attributedStringValue = strikethrough(item.title)
+                cell.attributedStringValue = strikethrough(item.title, fontSize: 13)
             } else {
                 cell.stringValue = item.title
                 cell.font = NSFont.systemFont(ofSize: 13, weight: item.isStarred ? .semibold : .regular)
@@ -777,6 +797,50 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         store.delete(done); tableView.reloadData(); updateStatus()
     }
 
+    @objc func refreshAction() {
+        store.reload()
+        tableView.reloadData()
+        updateStatus()
+        // 刷新便笺：重新生成内容
+        let sm = StickyNoteManager.shared
+        if let panel = sm.panel,
+           let noteView = panel.contentView?.subviews.first(where: { $0 is StickyNoteView }) as? StickyNoteView {
+            let ids = sm.taskIDs
+            let items = store.items.filter { ids.contains($0.id) }
+            var blocks: [(String, String, String, String, String, NSColor, Int)] = []
+            for item in items {
+                var timeStr = ""
+                if let d = item.date {
+                    timeStr = dayFmt.string(from: d) + " " + timeFmt.string(from: d)
+                    if let e = item.endDate { timeStr += "-" + timeFmt.string(from: e) }
+                }
+                var countdownStr = ""
+                if let d = item.date {
+                    let cal = Calendar.current
+                    let a = cal.startOfDay(for: Date())
+                    let b = cal.startOfDay(for: d)
+                    let days = cal.dateComponents([.day], from: a, to: b).day ?? 0
+                    if days == 0 {
+                        let interval = d.timeIntervalSince(Date())
+                        if interval < 0 { countdownStr = "已过期" }
+                        else {
+                            let h = Int(interval) / 3600
+                            let m = (Int(interval) % 3600) / 60
+                            countdownStr = h > 0 ? "今天·\(h)时\(m)分" : "今天·\(m)分"
+                        }
+                    } else if days == 1 { countdownStr = "明天" }
+                    else if days > 0 { countdownStr = "\(days)天后" }
+                    else { countdownStr = "已过\(-days)天" }
+                }
+                let color = store.urgencyColor(for: item) ?? NSColor.systemGray
+                let pri = colorPriority(for: item)
+                blocks.append((item.title, timeStr, countdownStr, item.location ?? "", item.notes, color, pri))
+            }
+            noteView.taskBlocks = blocks.sorted { $0.6 < $1.6 }
+            noteView.needsDisplay = true
+        }
+    }
+
     @objc func openSettings() {
         if let delegate = NSApp.delegate as? AppDelegate {
             delegate.showNoteSettings()
@@ -809,7 +873,15 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
                 let a = cal.startOfDay(for: Date())
                 let b = cal.startOfDay(for: d)
                 let days = cal.dateComponents([.day], from: a, to: b).day ?? 0
-                if days == 0 { countdownStr = "今天" }
+                if days == 0 {
+                    let interval = d.timeIntervalSince(Date())
+                    if interval < 0 { countdownStr = "已过期" }
+                    else {
+                        let h = Int(interval) / 3600
+                        let m = (Int(interval) % 3600) / 60
+                        countdownStr = h > 0 ? "今天·\(h)时\(m)分" : "今天·\(m)分"
+                    }
+                }
                 else if days == 1 { countdownStr = "明天" }
                 else if days > 0 { countdownStr = "\(days)天后" }
                 else { countdownStr = "已过\(-days)天" }
@@ -851,6 +923,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         guard let date = item.date else { return 5 }
         let days = store.daysUntil(date)
         if days < 0 { return 5 }
+        if date.timeIntervalSinceNow < 0 { return 5 } // 过期项排最后
         if days == 0 { return 0 }
         if days <= 3 { return 1 }
         if days <= 7 { return 2 }
