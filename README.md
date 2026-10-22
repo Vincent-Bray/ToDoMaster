@@ -2,7 +2,7 @@
 
 > macOS 原生待办事项管理与桌面便笺工具 · 为高效备考与日常任务管理而生
 
-![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.1-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.2-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -77,6 +77,23 @@ ToDoMaster（简称 **TDM**）是一款 macOS 原生待办事项应用，采用 
 ---
 
 ## 构建与运行
+
+### ⚡ 一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Vincent-Bray/ToDoMaster/main/install.sh | bash
+```
+
+或克隆后运行：
+
+```bash
+git clone https://github.com/Vincent-Bray/ToDoMaster.git
+cd ToDoMaster && ./install.sh
+```
+
+自动完成编译、打包、安装到 `/Applications`、配置 Spotlight 关键词。
+
+### 手动构建
 
 ```bash
 git clone https://github.com/Vincent-Bray/ToDoMaster.git
@@ -169,6 +186,12 @@ ToDoMaster/
 ---
 
 ## 更新日志
+
+### v2.0.2（2026-10-22）📦
+
+- 📦 **一键安装脚本** `install.sh`：clone 后运行即完成编译、打包、安装
+- 📦 自动配置 Spotlight 关键词（TDM）
+- 📦 交互式引导全局快捷键配置
 
 ### v2.0.1（2026-10-22）🔧
 
