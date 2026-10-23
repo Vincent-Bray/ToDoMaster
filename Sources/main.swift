@@ -1,5 +1,4 @@
 import AppKit
-import AudioToolbox
 
 // ==================== 数据模型 ====================
 struct TodoItem: Codable {
@@ -535,6 +534,23 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
     }
 
     // MARK: - 垂直居中单元格
+    func editableCell(_ tf: NSTextField, bg: NSColor? = nil) -> NSTableCellView {
+        let cv = NSTableCellView()
+        tf.translatesAutoresizingMaskIntoConstraints = false
+        cv.textField = tf
+        cv.addSubview(tf)
+        NSLayoutConstraint.activate([
+            tf.centerYAnchor.constraint(equalTo: cv.centerYAnchor),
+            tf.leadingAnchor.constraint(equalTo: cv.leadingAnchor, constant: 4),
+            tf.trailingAnchor.constraint(lessThanOrEqualTo: cv.trailingAnchor, constant: -4)
+        ])
+        return cv
+    }
+
+
+
+
+
     func centeredCell(_ tf: NSTextField, bg: NSColor? = nil) -> NSView {
         let container = NSView()
         tf.translatesAutoresizingMaskIntoConstraints = false
@@ -684,20 +700,22 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         case "title":
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
-            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none; cell.delegate = self
+            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
+            cell.tag = row * 1000 + 1
             if item.isCompleted || isPast {
                 cell.attributedStringValue = strikethrough(item.title, fontSize: 13)
             } else {
                 cell.stringValue = item.title
                 cell.font = NSFont.systemFont(ofSize: 13, weight: item.isStarred ? .semibold : .regular)
             }
-            return centeredCell(cell, bg: bg)
+            cell.tag = row * 1000 + 1
+            return editableCell(cell, bg: bg)
 
         case "date":
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
             cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
-            cell.delegate = self
+            cell.tag = row * 1000
             var s = ""
             if let d = item.date {
                 s = dayFmt.string(from: d) + " " + timeFmt.string(from: d)
@@ -708,7 +726,8 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
                 cell.stringValue = s; cell.font = NSFont.systemFont(ofSize: 11)
                 cell.textColor = NSColor.systemOrange
             }
-            return centeredCell(cell, bg: bg)
+            cell.tag = row * 1000
+            return editableCell(cell, bg: bg)
 
         case "countdown":
             let cell = NSTextField(labelWithString: store.countdownText(for: item))
@@ -729,23 +748,27 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
             cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
+            cell.tag = row * 1000 + 2
             if isPast { cell.attributedStringValue = strikethrough(item.location ?? "") }
             else {
                 cell.stringValue = item.location ?? ""
                 cell.font = NSFont.systemFont(ofSize: 11); cell.textColor = NSColor.systemBlue
             }
-            return centeredCell(cell, bg: bg)
+            cell.tag = row * 1000 + 2
+            return editableCell(cell, bg: bg)
 
         case "notes":
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
-            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none; cell.delegate = self
+            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
+            cell.tag = row * 1000 + 3
             if isPast { cell.attributedStringValue = strikethrough(item.notes) }
             else {
                 cell.stringValue = item.notes
                 cell.font = NSFont.systemFont(ofSize: 11); cell.textColor = NSColor.systemGray
             }
-            return centeredCell(cell, bg: bg)
+            cell.tag = row * 1000 + 3
+            return editableCell(cell, bg: bg)
 
         default: return nil
         }
@@ -755,68 +778,48 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         return col?.identifier.rawValue != "check" && col?.identifier.rawValue != "star" && col?.identifier.rawValue != "countdown"
     }
 
+    // 这是 view-based 表格编辑的唯一标准回调
     func tableView(_ tv: NSTableView, setObjectValue obj: Any?, for col: NSTableColumn?, row: Int) {
-        guard row < displayRows.count, let cid = col?.identifier.rawValue, let val = obj as? String else { return }
-        var item = itemFor(row)
+        guard row < displayRows.count, let cid = col?.identifier.rawValue else { return }
+        guard case .task(var item) = displayRows[row] else { return }
+
+        // 不做类型强转，兼容任何类型
+        let val: String
+        if let s = obj as? String { val = s }
+        else if let s = obj as? NSString { val = s as String }
+        else if let a = obj as? NSAttributedString { val = a.string }
+        else if let n = obj as? NSNumber { val = n.stringValue }
+        else if let o = obj { val = String(describing: o) }
+        else { val = "" }
+
+        let oldDate = item.date
+        var dateChanged = false
+
         switch cid {
         case "title": item.title = val
         case "loc": item.location = val.isEmpty ? nil : val
         case "notes": item.notes = val
         case "date":
-            let cal = Calendar.current
-            var newDate: Date? = nil
-            // 尝试完整日期时间格式
-            let fmts = ["yyyy-MM-dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd HH:mm", "yyyy/MM/dd",
-                        "MM-dd HH:mm", "MM-dd", "MM月dd日 HH:mm", "MM月dd日", "HH:mm"]
-            for fmt in fmts {
-                let df = DateFormatter()
-                df.dateFormat = fmt
-                if let d = df.date(from: val) {
-                    if fmt == "HH:mm" || fmt == "MM-dd HH:mm" || fmt == "MM月dd日 HH:mm" {
-                        // 只有时间或月日时分，补全年份
-                        var c = cal.dateComponents([.year, .month, .day], from: item.date ?? Date())
-                        if fmt != "HH:mm" {
-                            let dc = cal.dateComponents([.month, .day], from: d)
-                            c.month = dc.month; c.day = dc.day
-                        }
-                        let tc = cal.dateComponents([.hour, .minute], from: d)
-                        c.hour = tc.hour; c.minute = tc.minute
-                        newDate = cal.date(from: c)
-                    } else if fmt == "MM-dd" || fmt == "MM月dd日" {
-                        // 只有月日，补全年份和原时间
-                        var c = cal.dateComponents([.year, .hour, .minute], from: item.date ?? Date())
-                        let dc = cal.dateComponents([.month, .day], from: d)
-                        c.month = dc.month; c.day = dc.day
-                        newDate = cal.date(from: c)
-                    } else {
-                        // 完整日期时间或完整日期
-                        if fmt == "yyyy-MM-dd" || fmt == "yyyy/MM/dd" {
-                            // 保持原时间
-                            var c = cal.dateComponents([.hour, .minute], from: item.date ?? Date())
-                            let dc = cal.dateComponents([.year, .month, .day], from: d)
-                            c.year = dc.year; c.month = dc.month; c.day = dc.day
-                            newDate = cal.date(from: c)
-                        } else {
-                            newDate = d
-                        }
-                    }
-                    break
-                }
+            if let newDate = parseDateInput(val, fromDate: item.date) {
+                item.date = newDate
+                dateChanged = true
             }
-            if let d = newDate { item.date = d }
         default: break
         }
-        // 检测分区迁移：日期修改后自动移动到对应分区
-        let wasToday = itemFor(row).isToday
+
         store.update(item)
         store.sortItems()
-        let isNowToday = item.isToday
-        if cid == "date" && wasToday != isNowToday {
-            SoundFX.shared.noteCreate()
-        }
         tableView.reloadData()
         updateStatus()
-        refreshVisibleNotes()
+        if dateChanged {
+            if let od = oldDate, let nd = item.date,
+               !Calendar.current.isDate(od, equalTo: nd, toGranularity: .day) {
+                let wasToday = Calendar.current.isDateInToday(od)
+                let isNowToday = Calendar.current.isDateInToday(nd)
+                if wasToday != isNowToday { SoundFX.shared.noteCreate() }
+            }
+            refreshVisibleNotes()
+        }
     }
 
     // 编辑开始前保存日期快照
@@ -826,47 +829,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         }
     }
 
-    // 编辑完成后：保存修改 + 检测日期变更 + 分区迁移
-    func controlTextDidEndEditing(_ obj: Notification) {
-        guard let tf = obj.object as? NSTextField else { return }
-        // 找到这个文本框所在的行和列
-        let row = tableView.row(for: tf)
-        let col = tableView.column(for: tf)
-        guard row >= 0, row < displayRows.count, col >= 0 else { return }
-        let cid = tableView.tableColumns[col].identifier.rawValue
-        let val = tf.stringValue
 
-        var item = itemFor(row)
-        var dateChanged = false
-
-        switch cid {
-        case "title": item.title = val
-        case "loc": item.location = val.isEmpty ? nil : val
-        case "notes": item.notes = val
-        case "date":
-            let oldDate = item.date
-            if let newDate = parseDateInput(val, fromDate: item.date) {
-                item.date = newDate
-                dateChanged = true
-                // 检测分区迁移
-                if let od = oldDate, let nd = item.date,
-                   !Calendar.current.isDate(od, equalTo: nd, toGranularity: .day) {
-                    let wasToday = Calendar.current.isDateInToday(od)
-                    let isNowToday = Calendar.current.isDateInToday(nd)
-                    if wasToday != isNowToday {
-                        SoundFX.shared.noteCreate()
-                    }
-                }
-            }
-        default: break
-        }
-
-        store.update(item)
-        store.sortItems()
-        tableView.reloadData()
-        updateStatus()
-        if dateChanged { refreshVisibleNotes() }
-    }
 
     // 解析日期输入（支持多种格式）
     func parseDateInput(_ val: String, fromDate old: Date?) -> Date? {
@@ -1559,6 +1522,8 @@ class SoundFX {
     func starToggle() { play("Frog") }
     func headerToggle() { play("Submarine") }
 }
+
+// 旧 EditCellView / EditableTextField 已移除（多机制冲突）
 
 class SliderTracker: NSObject {
     let slider: NSSlider
