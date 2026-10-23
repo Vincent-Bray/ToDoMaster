@@ -182,24 +182,41 @@ func parseSmartInput(_ input: String) -> TodoItem {
         }
     }
 
-    // 时间区间
-    if let re = try? NSRegularExpression(pattern: "(上午|下午|晚上|中午|早上)?\\s*(\\d{1,2})[:：点时](\\d{1,2}|半)?[分]?\\s*[-~～—–—到至]+\\s*(上午|下午|晚上|中午|早上)?\\s*(\\d{1,2})[:：点时]?(\\d{1,2}|半)?[分]?"),
-       let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
-        let g = { (i: Int) -> String in
-            m.range(at: i).location != NSNotFound ? (text as NSString).substring(with: m.range(at: i)) : ""
+    // 时间区间（手动解析，更可靠）
+    // 匹配形如 8:30-10:00 / 上午8:30-10:00 / 8点30-10点 等
+    do {
+        let timeRangePattern = "(上午|下午|晚上|中午|早上|凌晨)?[ ]*(\\d{1,2})[:::点时](\\d{1,2}|半)?[分]?[ ]*[-~～—–—到至]+[ ]*(上午|下午|晚上|中午|早上|凌晨)?[ ]*(\\d{1,2})[:::点时]?(\\d{1,2}|半)?[分]?"
+        if let re = try? NSRegularExpression(pattern: timeRangePattern),
+           let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
+            func gs(_ i: Int) -> String {
+                guard i <= m.numberOfRanges - 1 else { return "" }
+                let r = m.range(at: i)
+                return r.location != NSNotFound ? (text as NSString).substring(with: r) : ""
+            }
+            let p1 = gs(1); let rawH1 = gs(2); let rawM1 = gs(3)
+            let p2 = gs(4); let rawH2 = gs(5); let rawM2 = gs(6)
+            var h1 = Int(rawH1) ?? 0
+            var m1: Int = 0
+            if rawM1 == "半" { m1 = 30 } else { m1 = Int(rawM1) ?? 0 }
+            var h2 = Int(rawH2) ?? 0
+            var m2: Int = 0
+            if rawM2 == "半" { m2 = 30 } else { m2 = Int(rawM2) ?? 0 }
+            // 上午/下午调整
+            switch p1 {
+            case "下午", "晚上": if h1 < 12 { h1 += 12 }
+            case "中午": if h1 < 11 { h1 = 12 }
+            default: break
+            }
+            switch p2 {
+            case "下午", "晚上": if h2 < 12 { h2 += 12 }
+            case "中午": if h2 < 11 { h2 = 12 }
+            default: break
+            }
+            var c = cal.dateComponents([.year, .month, .day], from: now)
+            c.hour = h1; c.minute = m1; date = cal.date(from: c)
+            c.hour = h2; c.minute = m2; endDate = cal.date(from: c)
+            removeMatch(m)
         }
-        let p1 = g(1); var h1 = Int(g(2)) ?? 0
-        let ms1 = g(3); let m1 = ms1 == "半" ? 30 : (Int(ms1) ?? 0)
-        let p2 = g(4); var h2 = Int(g(5)) ?? 0
-        let ms2 = g(6); let m2 = ms2 == "半" ? 30 : (Int(ms2) ?? 0)
-        func adj(_ per: String, _ h: inout Int) {
-            switch per { case "下午","晚上": if h < 12 { h += 12 }; case "中午": if h < 11 { h = 12 }; default: break }
-        }
-        adj(p1, &h1); adj(p2, &h2)
-        var c = cal.dateComponents([.year,.month,.day], from: now)
-        c.hour = h1; c.minute = m1; date = cal.date(from: c)
-        c.hour = h2; c.minute = m2; endDate = cal.date(from: c)
-        removeMatch(m)
     }
 
     // 日期
@@ -331,9 +348,10 @@ class DashedTableView: NSTableView {
 }
 
 // ==================== 主视图 ====================
-class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
+class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, NSTextFieldDelegate {
     let store = TodoStore.shared
     var selectedIDs = Set<UUID>()
+    var editingSnapshot: (id: UUID, date: Date?)? = nil
     var tableView = DashedTableView()
     var scrollView = NSScrollView()
     var inputField = NSTextField()
@@ -666,7 +684,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         case "title":
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
-            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
+            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none; cell.delegate = self
             if item.isCompleted || isPast {
                 cell.attributedStringValue = strikethrough(item.title, fontSize: 13)
             } else {
@@ -679,6 +697,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
             cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
+            cell.delegate = self
             var s = ""
             if let d = item.date {
                 s = dayFmt.string(from: d) + " " + timeFmt.string(from: d)
@@ -720,7 +739,7 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         case "notes":
             let cell = NSTextField()
             cell.isBezeled = false; cell.isBordered = false; cell.drawsBackground = false
-            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none
+            cell.isEditable = true; cell.focusRingType = NSFocusRingType.none; cell.delegate = self
             if isPast { cell.attributedStringValue = strikethrough(item.notes) }
             else {
                 cell.stringValue = item.notes
@@ -744,16 +763,145 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
         case "loc": item.location = val.isEmpty ? nil : val
         case "notes": item.notes = val
         case "date":
-            let p = DateFormatter(); p.dateFormat = "HH:mm"
-            if let d = p.date(from: val) {
-                var c = Calendar.current.dateComponents([.year,.month,.day], from: item.date ?? Date())
-                c.hour = Calendar.current.component(.hour, from: d)
-                c.minute = Calendar.current.component(.minute, from: d)
-                item.date = Calendar.current.date(from: c)
+            let cal = Calendar.current
+            var newDate: Date? = nil
+            // 尝试完整日期时间格式
+            let fmts = ["yyyy-MM-dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd HH:mm", "yyyy/MM/dd",
+                        "MM-dd HH:mm", "MM-dd", "MM月dd日 HH:mm", "MM月dd日", "HH:mm"]
+            for fmt in fmts {
+                let df = DateFormatter()
+                df.dateFormat = fmt
+                if let d = df.date(from: val) {
+                    if fmt == "HH:mm" || fmt == "MM-dd HH:mm" || fmt == "MM月dd日 HH:mm" {
+                        // 只有时间或月日时分，补全年份
+                        var c = cal.dateComponents([.year, .month, .day], from: item.date ?? Date())
+                        if fmt != "HH:mm" {
+                            let dc = cal.dateComponents([.month, .day], from: d)
+                            c.month = dc.month; c.day = dc.day
+                        }
+                        let tc = cal.dateComponents([.hour, .minute], from: d)
+                        c.hour = tc.hour; c.minute = tc.minute
+                        newDate = cal.date(from: c)
+                    } else if fmt == "MM-dd" || fmt == "MM月dd日" {
+                        // 只有月日，补全年份和原时间
+                        var c = cal.dateComponents([.year, .hour, .minute], from: item.date ?? Date())
+                        let dc = cal.dateComponents([.month, .day], from: d)
+                        c.month = dc.month; c.day = dc.day
+                        newDate = cal.date(from: c)
+                    } else {
+                        // 完整日期时间或完整日期
+                        if fmt == "yyyy-MM-dd" || fmt == "yyyy/MM/dd" {
+                            // 保持原时间
+                            var c = cal.dateComponents([.hour, .minute], from: item.date ?? Date())
+                            let dc = cal.dateComponents([.year, .month, .day], from: d)
+                            c.year = dc.year; c.month = dc.month; c.day = dc.day
+                            newDate = cal.date(from: c)
+                        } else {
+                            newDate = d
+                        }
+                    }
+                    break
+                }
+            }
+            if let d = newDate { item.date = d }
+        default: break
+        }
+        // 检测分区迁移：日期修改后自动移动到对应分区
+        let wasToday = itemFor(row).isToday
+        store.update(item)
+        store.sortItems()
+        let isNowToday = item.isToday
+        if cid == "date" && wasToday != isNowToday {
+            SoundFX.shared.noteCreate()
+        }
+        tableView.reloadData()
+        updateStatus()
+        refreshVisibleNotes()
+    }
+
+    // 编辑开始前保存日期快照
+    func tableView(_ tableView: NSTableView, willDisplayCell cell: Any, for tableColumn: NSTableColumn?, row: Int) {
+        if let cid = tableColumn?.identifier.rawValue, cid == "date", let item = taskForRow(row) {
+            editingSnapshot = (id: item.id, date: item.date)
+        }
+    }
+
+    // 编辑完成后：保存修改 + 检测日期变更 + 分区迁移
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let tf = obj.object as? NSTextField else { return }
+        // 找到这个文本框所在的行和列
+        let row = tableView.row(for: tf)
+        let col = tableView.column(for: tf)
+        guard row >= 0, row < displayRows.count, col >= 0 else { return }
+        let cid = tableView.tableColumns[col].identifier.rawValue
+        let val = tf.stringValue
+
+        var item = itemFor(row)
+        var dateChanged = false
+
+        switch cid {
+        case "title": item.title = val
+        case "loc": item.location = val.isEmpty ? nil : val
+        case "notes": item.notes = val
+        case "date":
+            let oldDate = item.date
+            if let newDate = parseDateInput(val, fromDate: item.date) {
+                item.date = newDate
+                dateChanged = true
+                // 检测分区迁移
+                if let od = oldDate, let nd = item.date,
+                   !Calendar.current.isDate(od, equalTo: nd, toGranularity: .day) {
+                    let wasToday = Calendar.current.isDateInToday(od)
+                    let isNowToday = Calendar.current.isDateInToday(nd)
+                    if wasToday != isNowToday {
+                        SoundFX.shared.noteCreate()
+                    }
+                }
             }
         default: break
         }
+
         store.update(item)
+        store.sortItems()
+        tableView.reloadData()
+        updateStatus()
+        if dateChanged { refreshVisibleNotes() }
+    }
+
+    // 解析日期输入（支持多种格式）
+    func parseDateInput(_ val: String, fromDate old: Date?) -> Date? {
+        let cal = Calendar.current
+        let fmts = ["yyyy-MM-dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd HH:mm", "yyyy/MM/dd",
+                    "MM-dd HH:mm", "MM-dd", "MM月dd日 HH:mm", "MM月dd日", "HH:mm"]
+        for fmt in fmts {
+            let df = DateFormatter(); df.dateFormat = fmt
+            if let d = df.date(from: val) {
+                if fmt == "HH:mm" {
+                    var c = cal.dateComponents([.year, .month, .day], from: old ?? Date())
+                    let tc = cal.dateComponents([.hour, .minute], from: d)
+                    c.hour = tc.hour; c.minute = tc.minute
+                    return cal.date(from: c)
+                } else if fmt == "MM-dd" || fmt == "MM月dd日" {
+                    var c = cal.dateComponents([.year, .hour, .minute], from: old ?? Date())
+                    let dc = cal.dateComponents([.month, .day], from: d)
+                    c.month = dc.month; c.day = dc.day
+                    return cal.date(from: c)
+                } else if fmt == "MM-dd HH:mm" || fmt == "MM月dd日 HH:mm" {
+                    var c = cal.dateComponents([.year], from: old ?? Date())
+                    let dc = cal.dateComponents([.month, .day, .hour, .minute], from: d)
+                    c.month = dc.month; c.day = dc.day; c.hour = dc.hour; c.minute = dc.minute
+                    return cal.date(from: c)
+                } else if fmt == "yyyy-MM-dd" || fmt == "yyyy/MM/dd" {
+                    var c = cal.dateComponents([.hour, .minute], from: old ?? Date())
+                    let dc = cal.dateComponents([.year, .month, .day], from: d)
+                    c.year = dc.year; c.month = dc.month; c.day = dc.day
+                    return cal.date(from: c)
+                } else {
+                    return d
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - 右键菜单（NSMenuDelegate 动态构建）
@@ -848,15 +996,48 @@ class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelega
             case .loc: item.location = val.isEmpty ? nil : val
             case .notes: item.notes = val
             case .date:
-                let p = DateFormatter(); p.dateFormat = "HH:mm"
-                if let d = p.date(from: val) {
-                    var c = Calendar.current.dateComponents([.year,.month,.day], from: item.date ?? Date())
-                    c.hour = Calendar.current.component(.hour, from: d)
-                    c.minute = Calendar.current.component(.minute, from: d)
-                    item.date = Calendar.current.date(from: c)
+                let cal = Calendar.current
+                var newDate: Date? = nil
+                let fmts = ["yyyy-MM-dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd HH:mm", "yyyy/MM/dd",
+                            "MM-dd HH:mm", "MM-dd", "MM月dd日 HH:mm", "MM月dd日", "HH:mm"]
+                for fmt in fmts {
+                    let df = DateFormatter(); df.dateFormat = fmt
+                    if let d = df.date(from: val) {
+                        if fmt == "HH:mm" || fmt == "MM-dd HH:mm" || fmt == "MM月dd日 HH:mm" {
+                            var c = cal.dateComponents([.year, .month, .day], from: item.date ?? Date())
+                            if fmt != "HH:mm" {
+                                let dc = cal.dateComponents([.month, .day], from: d)
+                                c.month = dc.month; c.day = dc.day
+                            }
+                            let tc = cal.dateComponents([.hour, .minute], from: d)
+                            c.hour = tc.hour; c.minute = tc.minute
+                            newDate = cal.date(from: c)
+                        } else if fmt == "MM-dd" || fmt == "MM月dd日" {
+                            var c = cal.dateComponents([.year, .hour, .minute], from: item.date ?? Date())
+                            let dc = cal.dateComponents([.month, .day], from: d)
+                            c.month = dc.month; c.day = dc.day
+                            newDate = cal.date(from: c)
+                        } else {
+                            if fmt == "yyyy-MM-dd" || fmt == "yyyy/MM/dd" {
+                                var c = cal.dateComponents([.hour, .minute], from: item.date ?? Date())
+                                let dc = cal.dateComponents([.year, .month, .day], from: d)
+                                c.year = dc.year; c.month = dc.month; c.day = dc.day
+                                newDate = cal.date(from: c)
+                            } else {
+                                newDate = d
+                            }
+                        }
+                        break
+                    }
                 }
+                if let d = newDate { item.date = d }
             }
-            store.update(item); tableView.reloadData()
+            let wasToday = itemFor(row).isToday
+            store.update(item); tableView.reloadData(); updateStatus()
+            if wasToday != item.isToday {
+                SoundFX.shared.noteCreate()
+            }
+            refreshVisibleNotes()
         }
     }
 
@@ -984,7 +1165,7 @@ SoundFX.shared.buttonTap()
             let item = TodoItem(title: t, date: date, endDate: end,
                                 location: l.isEmpty ? nil : l, notes: n, isStarred: starred)
             store.add(item)
-            tableView.reloadData(); updateStatus()
+            tableView.reloadData(); updateStatus(); refreshVisibleNotes()
         }
     }
 
