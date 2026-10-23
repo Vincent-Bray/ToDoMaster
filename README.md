@@ -2,7 +2,7 @@
 
 > macOS 原生待办事项管理与桌面便笺工具 · 为高效备考与日常任务管理而生
 
-![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.3-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.2.1-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -187,13 +187,13 @@ ToDoMaster/
 
 ## 更新日志
 
-### v2.0.3（2026-10-22）🔧
+### v2.2.1（2026-10-22）🔧
 
 - 🐛 **修复长期便笺无法弹出**：叠放边界约束 + 强制可见，今日便笺过高时不再推出屏幕
 - 🧹 清理 7 处未使用变量，零警告编译
 - 📋 便笺叠放自动适配屏幕安全区（不被 Dock/菜单栏遮挡）
 
-### v2.0.2（2026-10-22）🔧
+### v2.2.0（2026-10-22）✨
 
 - 📦 **一键安装脚本** `install.sh`：clone 后运行即完成编译、打包、安装
 - 📦 自动配置 Spotlight 关键词（TDM）
@@ -202,7 +202,7 @@ ToDoMaster/
 - 🔄 **分区自动迁移**：修改日期后表项自动移入正确分区（今日↔长期），带音效提示
 - 📅 日期编辑支持 8 种格式（`2026-10-28` / `10-28` / `10月28日` / `14:30` 等）
 
-### v2.0.1（2026-10-22）🔧
+### v2.1.0（2026-10-22）✨
 
 **音效系统**
 - 🔊 全按钮音效反馈（Glass/Blow/Pop/Funk/Frog/Bottle/Hero/Ping 等）
@@ -250,7 +250,7 @@ ToDoMaster/
 - 🐛 修复便笺边框开关、去重、勾选同步
 - 🧹 清理冗余代码（200+ 行）
 
-### v1.5beta（2026-10-21）🧪
+### v1.1.0（2026-10-21）✨
 
 - 手动刷新、便笺颜色选择、深夜模式全应用适配
 - 智能倒数、过期管理、折叠透明度独立控制
@@ -261,6 +261,16 @@ ToDoMaster/
 - 🎉 首个正式版本
 
 ---
+
+## 版本规范
+
+采用语义化版本号（Semantic Versioning）：
+
+| 位置 | 含义 | 示例 |
+|------|------|------|
+| **MAJOR** | 大版本更新，新增大量全新功能（架构级变化） | 1.x.x → 2.0.0 |
+| **MINOR** | 新增功能扩展（在现有基础上加入新特性） | 2.1.x → 2.2.0 |
+| **PATCH** | 小版本更新（修复 bug、微调优化） | 2.2.0 → 2.2.1 |
 
 ## License
 
