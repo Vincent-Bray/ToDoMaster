@@ -2,7 +2,7 @@
 
 > macOS 原生待办事项管理与桌面便笺工具 · 为高效备考与日常任务管理而生
 
-![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.2-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Release](https://img.shields.io/badge/release-v2.0.3-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -186,6 +186,12 @@ ToDoMaster/
 ---
 
 ## 更新日志
+
+### v2.0.3（2026-10-22）🔧
+
+- 🐛 **修复长期便笺无法弹出**：叠放边界约束 + 强制可见，今日便笺过高时不再推出屏幕
+- 🧹 清理 7 处未使用变量，零警告编译
+- 📋 便笺叠放自动适配屏幕安全区（不被 Dock/菜单栏遮挡）
 
 ### v2.0.2（2026-10-22）🔧
 

@@ -1483,7 +1483,6 @@ class ColorPickerHelper: NSObject {
         // 将系统调色盘定位到 📝 按钮正右侧
         let panel = NSColorPanel.shared
         if let win = sender.window {
-            let btnFrame = win.frame
             // sender 在屏幕上的位置
             let btnRect = sender.convert(sender.bounds, to: nil)
             let screenRect = win.convertToScreen(btnRect)
@@ -1962,6 +1961,8 @@ class StickyNoteManager {
             createNotePanel(tasks: tasks, isToday: true)
         }
         stackNotes()
+        // 确保面板可见
+        todayPanel?.orderFrontRegardless()
     }
 
     func updateMemoNote(tasks: [(String, String, String, String, String, NSColor, Int, Bool, UUID?)], ids: Set<UUID>) {
@@ -1986,6 +1987,8 @@ class StickyNoteManager {
             createNotePanel(tasks: tasks, isToday: false)
         }
         stackNotes()
+        // 确保面板可见
+        memoPanel?.orderFrontRegardless()
     }
 
     func createNotePanel(tasks: [(String, String, String, String, String, NSColor, Int, Bool, UUID?)], isToday: Bool) {
@@ -2040,7 +2043,7 @@ class StickyNoteManager {
         noteView.fontAlpha = fontAlpha
         noteView.isTodayNote = isToday
         DispatchQueue.main.async { noteView.rebuildCheckboxes() }
-        noteView.onTaskToggle = { [weak self] itemId in
+        noteView.onTaskToggle = { itemId in
             guard let id = itemId else { return }
             TodoStore.shared.toggle(id)
             // 通知主界面刷新
@@ -2158,6 +2161,7 @@ class StickyNoteManager {
     // MARK: - 智能叠放
     func stackNotes() {
         guard let screen = NSScreen.main else { return }
+        let vis = screen.visibleFrame
         let topY = screen.frame.maxY - 28
         var currentY = topY
 
@@ -2165,12 +2169,18 @@ class StickyNoteManager {
         if let tp = todayPanel, tp.isVisible {
             var f = tp.frame
             f.origin.y = currentY - f.height
+            // 确保不超出屏幕底部
+            if f.origin.y < vis.minY { f.origin.y = vis.minY }
             tp.setFrame(f, display: true)
             currentY = f.origin.y - 4
         }
         if let mp = memoPanel, mp.isVisible {
             var f = mp.frame
             f.origin.y = currentY - f.height
+            // 如果放不下，放回顶部
+            if f.origin.y < vis.minY {
+                f.origin.y = topY - f.height
+            }
             mp.setFrame(f, display: true)
         }
     }
@@ -2568,15 +2578,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         helpButton.font = NSFont.systemFont(ofSize: 12)
         helpButton.frame = NSRect(x: 0, y: 30, width: 120, height: 28)
 
-        // 分组标题和分隔线
+        // 分组标题
         let hAppearance = makeSectionHeader("外观透明度", 502)
-        let sep1 = makeSeparator(447)
         let hCollapse = makeSectionHeader("显示与折叠", 370)
-        let sep2 = makeSeparator(306)
         let hColor = makeSectionHeader("颜色与主题", 238)
-        let sep3 = makeSeparator(172)
         let hPosition = makeSectionHeader("位置与帮助", 106)
-        let sep4 = makeSeparator(70)
 
         _ = bgTracker; _ = fontTracker; _ = cAlphaTracker // 防止被释放
         // 连接调色盘按钮
